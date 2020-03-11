@@ -1,0 +1,144 @@
+diff --git a/include/darknet.h b/include/darknet.h
+index 07ef418..ebcbb62 100644
+--- a/include/darknet.h
++++ b/include/darknet.h
+@@ -46,7 +46,7 @@ typedef struct{
+ tree *read_tree(char *filename);
+ 
+ typedef enum{
+-    LOGISTIC, RELU, RELIE, LINEAR, RAMP, TANH, PLSE, LEAKY, ELU, LOGGY, STAIR, HARDTAN, LHTAN, SELU
++    LOGISTIC, RELU, RELIE, LINEAR, RAMP, TANH, PLSE, LEAKY, ELU, LOGGY, STAIR, HARDTAN, LHTAN, SELU, STEPS16
+ } ACTIVATION;
+ 
+ typedef enum{
+diff --git a/src/activation_kernels.cl b/src/activation_kernels.cl
+index 1ddb705..19c231e 100644
+--- a/src/activation_kernels.cl
++++ b/src/activation_kernels.cl
+@@ -18,6 +18,8 @@ float leaky_activate_kernel(float x);
+ float tanh_activate_kernel(float x);
+ float plse_activate_kernel(float x);
+ float stair_activate_kernel(float x);
++float steps16_activate_kernel(float x);
++
+ float hardtan_gradient_kernel(float x);
+ float linear_gradient_kernel(float x);
+ float logistic_gradient_kernel(float x);
+@@ -31,9 +33,10 @@ float leaky_gradient_kernel(float x);
+ float tanh_gradient_kernel(float x);
+ float plse_gradient_kernel(float x);
+ float stair_gradient_kernel(float x);
++float steps16_gradient_kernel(float x);
+ 
+ typedef enum{
+-    LOGISTIC, RELU, RELIE, LINEAR, RAMP, TANH, PLSE, LEAKY, ELU, LOGGY, STAIR, HARDTAN, LHTAN, SELU
++    LOGISTIC, RELU, RELIE, LINEAR, RAMP, TANH, PLSE, LEAKY, ELU, LOGGY, STAIR, HARDTAN, LHTAN, SELU, STEPS16
+ } ACTIVATION;
+ 
+ float activate_kernel(float x, ACTIVATION a);
+@@ -79,7 +82,10 @@ float stair_activate_kernel(float x)
+     if (n%2 == 0) return floor(x/2);
+     else return (x - n) + floor(x/2);
+ }
+-
++float steps16_activate_kernel(float x)
++{
++    return floor(x*16)/64;
++}
+ 
+ float hardtan_gradient_kernel(float x)
+ {
+@@ -106,6 +112,10 @@ float stair_gradient_kernel(float x)
+     if (floor(x) == x) return 0;
+     return 1;
+ }
++float steps16_gradient_kernel(float x)
++{
++    return (fabs((floor(x*16)/64) - x/4) < 0.001) ? 0 : 1;
++}
+ 
+ float activate_kernel(float x, ACTIVATION a)
+ {
+@@ -138,6 +148,8 @@ float activate_kernel(float x, ACTIVATION a)
+             return hardtan_activate_kernel(x);
+         case LHTAN:
+             return lhtan_activate_kernel(x);
++        case STEPS16:
++            return steps16_activate_kernel(x);
+     }
+     return 0;
+ }
+@@ -173,6 +185,8 @@ float gradient_kernel(float x, ACTIVATION a)
+             return hardtan_gradient_kernel(x);
+         case LHTAN:
+             return lhtan_gradient_kernel(x);
++        case STEPS16:
++            return steps16_gradient_kernel(x);
+     }
+     return 0;
+ }
+diff --git a/src/activations.c b/src/activations.c
+index da1a17a..4f7bca5 100644
+--- a/src/activations.c
++++ b/src/activations.c
+@@ -36,6 +36,8 @@ char *get_activation_string(ACTIVATION a)
+             return "hardtan";
+         case LHTAN:
+             return "lhtan";
++        case STEPS16:
++            return "steps16";
+         default:
+             break;
+     }
+@@ -58,6 +60,7 @@ ACTIVATION get_activation(char *s)
+     if (strcmp(s, "leaky")==0) return LEAKY;
+     if (strcmp(s, "tanh")==0) return TANH;
+     if (strcmp(s, "stair")==0) return STAIR;
++    if (strcmp(s, "steps16")==0) return STEPS16;
+     fprintf(stderr, "Couldn't find activation function %s, going with ReLU\n", s);
+     return RELU;
+ }
+@@ -93,6 +96,8 @@ float activate(float x, ACTIVATION a)
+             return hardtan_activate(x);
+         case LHTAN:
+             return lhtan_activate(x);
++        case STEPS16:
++            return steps16_activate(x);
+     }
+     return 0;
+ }
+@@ -136,6 +141,8 @@ float gradient(float x, ACTIVATION a)
+             return hardtan_gradient(x);
+         case LHTAN:
+             return lhtan_gradient(x);
++        case STEPS16:
++            return steps16_gradient(x);
+     }
+     return 0;
+ }
+diff --git a/src/activations.h b/src/activations.h
+index e107cb2..9991b0f 100644
+--- a/src/activations.h
++++ b/src/activations.h
+@@ -24,6 +24,10 @@ static inline float stair_activate(float x)
+ 	if (n%2 == 0) return floor(x/2.);
+ 	else return (x - n) + floor(x/2.);
+ }
++static inline float steps16_activate(float x)
++{
++    return floorf(x*16)/64;
++}
+ static inline float hardtan_activate(float x)
+ {
+ 	if (x < -1) return -1;
+@@ -76,6 +80,10 @@ static inline float stair_gradient(float x)
+ 	if (floorf(x) == x) return 0;
+ 	return 1;
+ }
++static inline float steps16_gradient(float x)
++{
++    return (fabsf((floorf(x*16)/64) - x/4) < 0.001) ? 0 : 1;
++}
+ static inline float relu_gradient(float x){return (x>0);}
+ static inline float elu_gradient(float x){return (x >= 0) + (x < 0)*(x + 1);}
+ static inline float selu_gradient(float x){return (x >= 0)*1.0507 + (x < 0)*(x + 1.0507*1.6732);}
