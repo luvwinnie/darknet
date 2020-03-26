@@ -18,12 +18,13 @@ GPU_MULTI=0
 OPENCV=1
 OPENMP=1
 # Choose only one (works if GPU=1): NVIDIA or AMD or ARM (for VC4CL or MaliGPU)
-NVIDIA=1
-AMD=0
+NVIDIA=0
+AMD=1
 ARM=0
 BENCHMARK=0
 LOSS_ONLY=0
 DEBUG=0
+NUMPY=1
 
 VPATH=./src/:./examples
 SLIB=libdarknet.so
@@ -76,8 +77,8 @@ LDFLAGS+= -L/usr/lib
 endif
 ifeq ($(AMD), 1)
 COMMON+= -DGPU -DOPENCL
-CFLAGS+= -DGPU -DOPENCL -I/usr/include/
-LDFLAGS+= -L/usr/lib/x86_64-linux-gnu/ -lOpenCL -lclBLAS
+CFLAGS+= -DGPU -DOPENCL `pkg-config --cflags openblas`
+LDFLAGS+= -framework OpenCL -lclBLAS
 LDFLAGS+= -L/usr/lib64
 endif
 ifeq ($(NVIDIA), 1)
@@ -86,6 +87,11 @@ CFLAGS+= -DGPU -DOPENCL -I/usr/include/ -I/usr/local/cuda/include/
 LDFLAGS+= -L/usr/local/cuda/lib64 -lOpenCL -L/usr/lib64 -lclBLAS
 LDFLAGS+= -L/usr/lib64
 endif
+endif
+
+ifeq ($(NUMPY), 1) 
+COMMON+= -DNUMPY -I/Users/cheesiang_leow/deep_learning/venv/include/ -I/Users/cheesiang_leow/deep_learning/venv/lib/python3.7/site-packages/numpy/core/include/numpy/
+CFLAGS+= -DNUMPY
 endif
 
 ifeq ($(GPU_FAST), 1)
